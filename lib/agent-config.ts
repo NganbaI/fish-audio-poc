@@ -26,6 +26,27 @@ export function isLanguage(v: string): v is Language {
 
 export const LANGUAGE_OPTIONS = LANGUAGES;
 
+/** Reverse of buildAgentConfig: prefill form input from a stored config. */
+export function configToFormInput(
+  name: string,
+  config: AgentConfig,
+): AgentFormInput {
+  return {
+    name,
+    systemPrompt: config.prompt?.system_prompt ?? "",
+    firstMessage: config.prompt?.first_message ?? "",
+    voiceId: config.voice?.voice_id ?? "",
+    language: config.voice?.speaking_language ?? "en",
+    eagerness: config.conversation?.eagerness ?? "balanced",
+    interruptible: config.conversation?.interruptible ?? true,
+    interruptionSensitivity:
+      config.conversation?.interruption_sensitivity ?? "balanced",
+    maxDurationSeconds: config.conversation?.max_duration_seconds ?? 300,
+    dataFields: config.analysis?.data_fields ?? [],
+    criteria: config.analysis?.criteria ?? [],
+  };
+}
+
 /** Assemble the PATCH-able config from validated form input. */
 export function buildAgentConfig(input: AgentFormInput): AgentConfig {
   const config: AgentConfig = {

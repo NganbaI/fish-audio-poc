@@ -52,6 +52,7 @@ export function VoiceCall({ agentId }: VoiceCallProps) {
 
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [endedSessionId, setEndedSessionId] = useState<string | null>(null);
   const lastSessionId = useRef<string | null>(null);
 
   const active = status === "connected" || status === "reconnecting";
@@ -72,6 +73,7 @@ export function VoiceCall({ agentId }: VoiceCallProps) {
       }
       const token = (await res.json()) as SessionToken;
       lastSessionId.current = token.session_id;
+      setEndedSessionId(null);
 
       // 2) Start the live session with the token (prompts for mic permission).
       await startSession({ sessionToken: token });
@@ -87,10 +89,9 @@ export function VoiceCall({ agentId }: VoiceCallProps) {
 
   const handleEnd = useCallback(async () => {
     await endSession();
+    if (lastSessionId.current) setEndedSessionId(lastSessionId.current);
     toast("Call ended", {
-      description: lastSessionId.current
-        ? "Analysis arrives via webhook shortly."
-        : undefined,
+      description: "Open the call to see the transcript, recording, and analysis.",
     });
   }, [endSession]);
 
@@ -191,9 +192,18 @@ export function VoiceCall({ agentId }: VoiceCallProps) {
             </Button>
           )}
         </div>
-        <Button variant="ghost" nativeButton={false} render={<Link href="/calls" />}>
-          View call history
-        </Button>
+        {endedSessionId && !active ? (
+          <Button
+            nativeButton={false}
+            render={<Link href={`/calls/${endedSessionId}`} />}
+          >
+            View call details →
+          </Button>
+        ) : (
+          <Button variant="ghost" nativeButton={false} render={<Link href="/calls" />}>
+            View call history
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );

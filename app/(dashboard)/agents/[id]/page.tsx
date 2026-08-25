@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Pencil } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getAgentRecord } from "@/lib/agents";
 import { VoiceCall } from "@/components/voice-call";
@@ -37,9 +38,18 @@ export default async function AgentDetailPage({
             {agent.fish_agent_id}
           </p>
         </div>
-        <Button variant="outline" nativeButton={false} render={<Link href="/" />}>
-          ← Back
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            nativeButton={false}
+            render={<Link href={`/agents/${agent.id}/edit`} />}
+          >
+            <Pencil data-icon="inline-start" />
+            Edit
+          </Button>
+          <Button variant="outline" nativeButton={false} render={<Link href="/" />}>
+            ← Back
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="test">

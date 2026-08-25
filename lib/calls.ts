@@ -14,14 +14,17 @@ function fromRow(row: Record<string, unknown>): CallRecord {
     endedReason: (row.ended_reason as string) ?? undefined,
     source: (row.source as string) ?? undefined,
     summary: (row.summary as string) ?? undefined,
+    language: (row.language as string) ?? undefined,
     analysis: (row.analysis as CallRecord["analysis"]) ?? undefined,
     transcript: (row.transcript as CallRecord["transcript"]) ?? undefined,
+    toolCalls: (row.tool_calls as CallRecord["toolCalls"]) ?? undefined,
     recordingUrls: (row.recording_urls as string[]) ?? undefined,
     durationSeconds: (row.duration_seconds as number) ?? undefined,
     startedAt: (row.started_at as string) ?? undefined,
     endedAt: (row.ended_at as string) ?? undefined,
     createdAt: (row.created_at as string) ?? new Date(0).toISOString(),
     updatedAt: (row.updated_at as string) ?? new Date(0).toISOString(),
+    raw: row.raw ?? undefined,
     hydrated: (row.hydrated as boolean) ?? undefined,
   };
 }
@@ -59,11 +62,14 @@ export interface CallUpsert {
   status?: string;
   ended_reason?: string;
   source?: string;
+  language?: string;
   summary?: string;
   analysis?: unknown;
   transcript?: unknown;
+  tool_calls?: unknown;
   recording_urls?: unknown;
   duration_seconds?: number;
+  raw?: unknown;
   hydrated?: boolean;
   started_at?: string;
   ended_at?: string;

@@ -93,6 +93,16 @@ create policy "calls_select_own"
 
 
 ================================================================================
+ CALL DETAIL — RUN THIS TOO (richer call output: tool calls + raw payload)
+================================================================================
+-- Same as supabase/migrations/0003_call_details.sql. Safe to run anytime.
+
+alter table public.calls add column if not exists tool_calls jsonb;
+alter table public.calls add column if not exists raw jsonb;
+alter table public.calls add column if not exists language text;
+
+
+================================================================================
  ADMIN — RUN THIS TOO (super-admin who can see ALL users' data)
 ================================================================================
 -- Same as supabase/migrations/0002_admin.sql. Safe to run after the SQL above.
