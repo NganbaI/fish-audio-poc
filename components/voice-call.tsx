@@ -33,7 +33,12 @@ const MODE_LABEL: Record<string, string> = {
   speaking: "Speaking",
 };
 
-export function VoiceCall() {
+interface VoiceCallProps {
+  /** Supabase agent record id; sent to /api/session which resolves the Fish agent. */
+  agentId?: string;
+}
+
+export function VoiceCall({ agentId }: VoiceCallProps) {
   const {
     session,
     status,
@@ -59,7 +64,7 @@ export function VoiceCall() {
       const res = await fetch("/api/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ agentId }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -78,7 +83,7 @@ export function VoiceCall() {
     } finally {
       setStarting(false);
     }
-  }, [startSession]);
+  }, [startSession, agentId]);
 
   const handleEnd = useCallback(async () => {
     await endSession();

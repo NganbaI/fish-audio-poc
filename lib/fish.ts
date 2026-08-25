@@ -105,6 +105,54 @@ export function getAgent(agentId: string): Promise<unknown> {
   return fishFetch(`/v1/agent/agents/${agentId}`);
 }
 
+/** List all agents the API key can access. Shape varies; return raw. */
+export function listAgents(): Promise<Record<string, unknown>> {
+  return fishFetch(`/v1/agent/agents`);
+}
+
+/** Fetch an agent's draft configuration (prompt/voice/conversation/analysis). */
+export function getAgentConfig(
+  agentId: string,
+): Promise<Record<string, unknown>> {
+  return fishFetch(`/v1/agent/agents/${agentId}/config`);
+}
+
+// ---------------------------------------------------------------------------
+// Voices (Models API — voice_id == TTS reference_id)
+// ---------------------------------------------------------------------------
+
+export interface FishVoice {
+  id: string;
+  title: string;
+  languages?: string[];
+}
+
+/**
+ * List voice models usable as an agent voice_id. The Models API returns a
+ * paginated list; we normalise to {id, title, languages}. Best-effort parsing.
+ */
+export async function listVoices(): Promise<FishVoice[]> {
+  const data = await fishFetch<Record<string, unknown>>(
+    `/v1/model?page_size=100`,
+  );
+  const items = (data.items ?? data.data ?? data.models) as unknown[] | undefined;
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((it): FishVoice | null => {
+      const o = it as Record<string, unknown>;
+      const id = (o._id ?? o.id) as string | undefined;
+      if (!id) return null;
+      return {
+        id,
+        title: (o.title as string) ?? (o.name as string) ?? id,
+        languages: Array.isArray(o.languages)
+          ? (o.languages as string[])
+          : undefined,
+      };
+    })
+    .filter((v): v is FishVoice => v !== null);
+}
+
 // ---------------------------------------------------------------------------
 // Sessions (create token + read history)
 // ---------------------------------------------------------------------------

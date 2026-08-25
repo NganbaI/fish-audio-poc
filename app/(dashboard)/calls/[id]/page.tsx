@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getCall } from "@/lib/store";
+import { createClient } from "@/lib/supabase/server";
+import { getCallForUser } from "@/lib/calls";
 import { deriveLead, LEAD_VARIANT } from "@/lib/lead";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,8 @@ export default async function CallDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const call = await getCall(id);
+  const supabase = await createClient();
+  const call = await getCallForUser(supabase, id);
   if (!call) notFound();
 
   const lead = deriveLead(call.analysis);
