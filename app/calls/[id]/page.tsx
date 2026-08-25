@@ -35,7 +35,7 @@ export default async function CallDetailPage({
           <h1 className="text-xl font-semibold">Call detail</h1>
           <p className="font-mono text-xs text-muted-foreground">{call.id}</p>
         </div>
-        <Button variant="outline" render={<Link href="/calls" />}>
+        <Button variant="outline" nativeButton={false} render={<Link href="/calls" />}>
           ← Back
         </Button>
       </div>

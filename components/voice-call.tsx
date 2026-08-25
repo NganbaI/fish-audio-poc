@@ -186,7 +186,7 @@ export function VoiceCall() {
             </Button>
           )}
         </div>
-        <Button variant="ghost" render={<Link href="/calls" />}>
+        <Button variant="ghost" nativeButton={false} render={<Link href="/calls" />}>
           View call history
         </Button>
       </CardFooter>
