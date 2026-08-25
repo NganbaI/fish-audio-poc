@@ -2,7 +2,7 @@
 //
 // Events: call.ended (+ended_reason), call.analyzed (+analysis), phone_call.dial_finished.
 // GOTCHA (confirmed in research): webhook payloads OMIT transcript & recording — on
-// call.analyzed we hydrate via getSession() + getRecording().
+// call.analyzed we hydrate via normalizeSession() (getSession + getRecording).
 //
 // Writes go through the Supabase service-role client (bypasses RLS); owner_user_id
 // is resolved by looking up the call's Fish agent id in the agents table.
@@ -14,8 +14,8 @@ import { verifyFishWebhook } from "@/lib/webhook";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAgentByFishId } from "@/lib/agents";
 import { upsertCall, type CallUpsert } from "@/lib/calls";
-import { getSession, getRecording } from "@/lib/fish";
-import type { CallAnalysis, StoredTranscriptItem } from "@/lib/types";
+import { normalizeSession } from "@/lib/fish-session";
+import type { CallAnalysis } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -28,71 +28,6 @@ interface FishWebhookEvent {
   dial_status?: string;
   analysis?: CallAnalysis;
   [k: string]: unknown;
-}
-
-interface Hydrated {
-  transcript?: StoredTranscriptItem[];
-  recording_urls?: string[];
-  duration_seconds?: number;
-  hydrated: boolean;
-}
-
-/** Pull transcript + recording from the read API (webhooks don't include them). */
-async function hydrate(sessionId: string): Promise<Hydrated> {
-  const out: Hydrated = { hydrated: false };
-
-  try {
-    const session = await getSession(sessionId);
-    const items = (session.items ?? session.timeline ?? session.messages) as
-      | unknown[]
-      | undefined;
-    if (Array.isArray(items)) {
-      out.transcript = items
-        .map((it): StoredTranscriptItem | null => {
-          const o = it as Record<string, unknown>;
-          const role = (o.role ?? o.speaker) as string | undefined;
-          const text = (o.text ?? o.message ?? o.content) as string | undefined;
-          if (!role || typeof text !== "string") return null;
-          return {
-            role,
-            text,
-            seconds:
-              typeof o.time_in_call_secs === "number"
-                ? o.time_in_call_secs
-                : undefined,
-          };
-        })
-        .filter((x): x is StoredTranscriptItem => x !== null);
-    }
-    if (typeof session.duration_seconds === "number") {
-      out.duration_seconds = session.duration_seconds;
-    }
-  } catch (err) {
-    console.error(`[webhook] getSession(${sessionId}) failed:`, err);
-  }
-
-  try {
-    const rec = await getRecording(sessionId);
-    const tracks = (rec.tracks ?? rec.recordings ?? rec.urls) as
-      | unknown[]
-      | undefined;
-    if (Array.isArray(tracks)) {
-      out.recording_urls = tracks
-        .map((t) => {
-          if (typeof t === "string") return t;
-          const o = t as Record<string, unknown>;
-          return (o.url ?? o.signed_url) as string | undefined;
-        })
-        .filter((u): u is string => typeof u === "string");
-    } else if (typeof rec.url === "string") {
-      out.recording_urls = [rec.url];
-    }
-  } catch (err) {
-    console.error(`[webhook] getRecording(${sessionId}) failed:`, err);
-  }
-
-  out.hydrated = Boolean(out.transcript || out.recording_urls);
-  return out;
 }
 
 export async function POST(request: Request) {
@@ -164,17 +99,29 @@ export async function POST(request: Request) {
       break;
 
     case "call.analyzed": {
-      const analysis = event.analysis ?? {};
-      const hydrated = await hydrate(sessionId);
+      const s = await normalizeSession(sessionId);
+      // Prefer analysis from the session; fall back to the webhook payload.
+      const analysis = s.analysis ?? event.analysis;
       await upsertCall(
         admin,
         {
           ...base,
           status: "analyzed",
+          language: s.language,
           summary:
-            typeof analysis.summary === "string" ? analysis.summary : undefined,
+            s.summary ??
+            (typeof event.analysis?.summary === "string"
+              ? event.analysis.summary
+              : undefined),
           analysis,
-          ...hydrated,
+          transcript: s.transcript,
+          tool_calls: s.toolCalls,
+          recording_urls: s.recordingUrls,
+          duration_seconds: s.durationSeconds,
+          started_at: s.startedAt,
+          ended_at: s.endedAt ?? now,
+          raw: s.raw,
+          hydrated: s.hydrated,
         },
         now,
       );

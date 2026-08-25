@@ -52,6 +52,22 @@ export async function getAgentByFishId(
   return (data as AgentRecord | null) ?? null;
 }
 
+/** Update the stored name/config for an agent record (RLS-scoped). */
+export async function updateAgentRecord(
+  supabase: SupabaseClient,
+  id: string,
+  patch: { name?: string; config?: AgentConfig },
+): Promise<AgentRecord> {
+  const { data, error } = await supabase
+    .from("agents")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw new Error(`updateAgentRecord: ${error.message}`);
+  return data as AgentRecord;
+}
+
 export interface CreateAgentRecordInput {
   fishAgentId: string;
   name: string;

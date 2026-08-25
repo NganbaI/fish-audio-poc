@@ -59,6 +59,15 @@ export interface StoredTranscriptItem {
   seconds?: number;
 }
 
+/** A tool the agent invoked during the call (client/webhook/system). */
+export interface StoredToolCall {
+  name: string;
+  source?: string;
+  input?: string;
+  output?: string;
+  error?: string;
+}
+
 /** A call/session record persisted by the webhook + hydration step. */
 export interface CallRecord {
   id: string; // session_id
@@ -66,15 +75,19 @@ export interface CallRecord {
   status: "created" | "in_progress" | "ended" | "analyzed" | string;
   endedReason?: string;
   source?: "web" | "phone" | string;
+  language?: string;
   summary?: string;
   analysis?: CallAnalysis;
   transcript?: StoredTranscriptItem[];
+  toolCalls?: StoredToolCall[];
   recordingUrls?: string[];
   durationSeconds?: number;
   startedAt?: string;
   endedAt?: string;
   createdAt: string;
   updatedAt: string;
+  /** Full raw Fish session payload, for the "everything else" view. */
+  raw?: unknown;
   /** True once transcript + recording were hydrated via the read API. */
   hydrated?: boolean;
 }

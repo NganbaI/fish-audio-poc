@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isCurrentUserAdmin } from "@/lib/admin";
 import { signOut } from "@/app/auth-actions";
 import { Button } from "@/components/ui/button";
 
@@ -17,6 +18,8 @@ export default async function DashboardLayout({
 
   if (!user) redirect("/login");
 
+  const isAdmin = await isCurrentUserAdmin();
+
   return (
     <>
       <header className="border-b">
@@ -31,6 +34,14 @@ export default async function DashboardLayout({
             <Link href="/calls" className="text-muted-foreground hover:text-foreground">
               History
             </Link>
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Admin
+              </Link>
+            )}
             <span className="hidden text-muted-foreground sm:inline">
               {user.email}
             </span>

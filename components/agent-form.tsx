@@ -48,23 +48,51 @@ interface Voice {
 
 const FIELD_TYPES: AnalysisFieldType[] = ["boolean", "number", "text", "enum"];
 
-export function AgentForm() {
-  const router = useRouter();
+export interface AgentFormInitial {
+  name: string;
+  systemPrompt: string;
+  firstMessage?: string;
+  voiceId?: string;
+  language?: string;
+  eagerness?: string;
+  interruptible?: boolean;
+  interruptionSensitivity?: string;
+  dataFields?: AnalysisDataField[];
+  criteria?: AnalysisCriterion[];
+}
 
-  const [name, setName] = useState("");
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [firstMessage, setFirstMessage] = useState("");
-  const [voiceId, setVoiceId] = useState("");
-  const [language, setLanguage] = useState("en");
-  const [eagerness, setEagerness] = useState("balanced");
-  const [interruptible, setInterruptible] = useState(true);
-  const [sensitivity, setSensitivity] = useState("balanced");
-  const [dataFields, setDataFields] = useState<AnalysisDataField[]>([
-    { name: "interested", type: "boolean", description: "Did the prospect show interest?" },
-  ]);
-  const [criteria, setCriteria] = useState<AnalysisCriterion[]>([
-    { name: "qualified", description: "Interested and gave a budget/size or callback time." },
-  ]);
+interface AgentFormProps {
+  /** Provide agentId + initial to edit an existing agent. */
+  agentId?: string;
+  initial?: AgentFormInitial;
+}
+
+export function AgentForm({ agentId, initial }: AgentFormProps) {
+  const router = useRouter();
+  const isEdit = Boolean(agentId);
+
+  const [name, setName] = useState(initial?.name ?? "");
+  const [systemPrompt, setSystemPrompt] = useState(initial?.systemPrompt ?? "");
+  const [firstMessage, setFirstMessage] = useState(initial?.firstMessage ?? "");
+  const [voiceId, setVoiceId] = useState(initial?.voiceId ?? "");
+  const [language, setLanguage] = useState(initial?.language ?? "en");
+  const [eagerness, setEagerness] = useState(initial?.eagerness ?? "balanced");
+  const [interruptible, setInterruptible] = useState(
+    initial?.interruptible ?? true,
+  );
+  const [sensitivity, setSensitivity] = useState(
+    initial?.interruptionSensitivity ?? "balanced",
+  );
+  const [dataFields, setDataFields] = useState<AnalysisDataField[]>(
+    initial?.dataFields ?? [
+      { name: "interested", type: "boolean", description: "Did the prospect show interest?" },
+    ],
+  );
+  const [criteria, setCriteria] = useState<AnalysisCriterion[]>(
+    initial?.criteria ?? [
+      { name: "qualified", description: "Interested and gave a budget/size or callback time." },
+    ],
+  );
   const [voices, setVoices] = useState<Voice[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -83,30 +111,37 @@ export function AgentForm() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch("/api/agents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          systemPrompt,
-          firstMessage: firstMessage || undefined,
-          voiceId: voiceId || undefined,
-          language,
-          eagerness,
-          interruptible,
-          interruptionSensitivity: sensitivity,
-          dataFields: dataFields.filter((f) => f.name.trim()),
-          criteria: criteria.filter((c) => c.name.trim()),
-        }),
-      });
+      const res = await fetch(
+        isEdit ? `/api/agents/${agentId}` : "/api/agents",
+        {
+          method: isEdit ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            systemPrompt,
+            firstMessage: firstMessage || undefined,
+            voiceId: voiceId || undefined,
+            language,
+            eagerness,
+            interruptible,
+            interruptionSensitivity: sensitivity,
+            dataFields: dataFields.filter((f) => f.name.trim()),
+            criteria: criteria.filter((c) => c.name.trim()),
+          }),
+        },
+      );
       const data = (await res.json()) as {
         agent?: { id: string };
         error?: string;
       };
       if (!res.ok || !data.agent) {
-        throw new Error(data.error ?? `Create failed (${res.status})`);
+        throw new Error(
+          data.error ?? `${isEdit ? "Update" : "Create"} failed (${res.status})`,
+        );
       }
-      toast.success("Agent created and published.");
+      toast.success(
+        isEdit ? "Agent updated and republished." : "Agent created and published.",
+      );
       router.push(`/agents/${data.agent.id}`);
       router.refresh();
     } catch (err) {
@@ -120,10 +155,11 @@ export function AgentForm() {
     <form onSubmit={handleSubmit}>
       <Card>
         <CardHeader>
-          <CardTitle>New agent</CardTitle>
+          <CardTitle>{isEdit ? "Edit agent" : "New agent"}</CardTitle>
           <CardDescription>
-            Configure a Fish Audio voice agent. It&apos;s created, configured, and
-            published in one step.
+            {isEdit
+              ? "Update the configuration. Saving re-applies it to Fish and publishes a new version."
+              : "Configure a Fish Audio voice agent. It's created, configured, and published in one step."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -273,7 +309,13 @@ export function AgentForm() {
             </FieldSet>
 
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Creating…" : "Create agent"}
+              {submitting
+                ? isEdit
+                  ? "Saving…"
+                  : "Creating…"
+                : isEdit
+                  ? "Save changes"
+                  : "Create agent"}
             </Button>
           </FieldGroup>
         </CardContent>
