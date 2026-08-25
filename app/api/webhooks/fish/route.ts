@@ -2,19 +2,20 @@
 //
 // Events: call.ended (+ended_reason), call.analyzed (+analysis), phone_call.dial_finished.
 // GOTCHA (confirmed in research): webhook payloads OMIT transcript & recording — on
-// call.analyzed we hydrate the record via getSession() + getRecording().
+// call.analyzed we hydrate via getSession() + getRecording().
+//
+// Writes go through the Supabase service-role client (bypasses RLS); owner_user_id
+// is resolved by looking up the call's Fish agent id in the agents table.
 //
 // Point the Fish console webhook at:  ${PUBLIC_BASE_URL}/api/webhooks/fish
 
 import { NextResponse } from "next/server";
 import { verifyFishWebhook } from "@/lib/webhook";
-import { upsertCall } from "@/lib/store";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getAgentByFishId } from "@/lib/agents";
+import { upsertCall, type CallUpsert } from "@/lib/calls";
 import { getSession, getRecording } from "@/lib/fish";
-import type {
-  CallAnalysis,
-  CallRecord,
-  StoredTranscriptItem,
-} from "@/lib/types";
+import type { CallAnalysis, StoredTranscriptItem } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -29,14 +30,16 @@ interface FishWebhookEvent {
   [k: string]: unknown;
 }
 
+interface Hydrated {
+  transcript?: StoredTranscriptItem[];
+  recording_urls?: string[];
+  duration_seconds?: number;
+  hydrated: boolean;
+}
+
 /** Pull transcript + recording from the read API (webhooks don't include them). */
-async function hydrate(
-  sessionId: string,
-): Promise<Pick<CallRecord, "transcript" | "recordingUrls" | "durationSeconds" | "hydrated">> {
-  const out: Pick<
-    CallRecord,
-    "transcript" | "recordingUrls" | "durationSeconds" | "hydrated"
-  > = { hydrated: false };
+async function hydrate(sessionId: string): Promise<Hydrated> {
+  const out: Hydrated = { hydrated: false };
 
   try {
     const session = await getSession(sessionId);
@@ -62,7 +65,7 @@ async function hydrate(
         .filter((x): x is StoredTranscriptItem => x !== null);
     }
     if (typeof session.duration_seconds === "number") {
-      out.durationSeconds = session.duration_seconds;
+      out.duration_seconds = session.duration_seconds;
     }
   } catch (err) {
     console.error(`[webhook] getSession(${sessionId}) failed:`, err);
@@ -74,7 +77,7 @@ async function hydrate(
       | unknown[]
       | undefined;
     if (Array.isArray(tracks)) {
-      out.recordingUrls = tracks
+      out.recording_urls = tracks
         .map((t) => {
           if (typeof t === "string") return t;
           const o = t as Record<string, unknown>;
@@ -82,13 +85,13 @@ async function hydrate(
         })
         .filter((u): u is string => typeof u === "string");
     } else if (typeof rec.url === "string") {
-      out.recordingUrls = [rec.url];
+      out.recording_urls = [rec.url];
     }
   } catch (err) {
     console.error(`[webhook] getRecording(${sessionId}) failed:`, err);
   }
 
-  out.hydrated = Boolean(out.transcript || out.recordingUrls);
+  out.hydrated = Boolean(out.transcript || out.recording_urls);
   return out;
 }
 
@@ -123,22 +126,39 @@ export async function POST(request: Request) {
 
   const sessionId = event.session_id;
   if (!sessionId) {
-    // Nothing to attribute (e.g. some dial_finished shapes) — ack so Fish stops retrying.
     return NextResponse.json({ ok: true, note: "no session_id" });
   }
 
+  const admin = createAdminClient();
   const now = new Date().toISOString();
+
+  // Resolve the owner via the agent's Fish id (best-effort).
+  let ownerUserId: string | undefined;
+  let agentRecordId: string | undefined;
+  if (event.agent_id) {
+    try {
+      const rec = await getAgentByFishId(admin, event.agent_id);
+      if (rec) {
+        ownerUserId = rec.owner_user_id;
+        agentRecordId = rec.id;
+      }
+    } catch (err) {
+      console.error("[webhook] owner lookup failed:", err);
+    }
+  }
+
+  const base: CallUpsert = {
+    session_id: sessionId,
+    ...(event.agent_id ? { fish_agent_id: event.agent_id } : {}),
+    ...(agentRecordId ? { agent_id: agentRecordId } : {}),
+    ...(ownerUserId ? { owner_user_id: ownerUserId } : {}),
+  };
 
   switch (event.type) {
     case "call.ended":
       await upsertCall(
-        sessionId,
-        {
-          status: "ended",
-          endedReason: event.ended_reason,
-          agentId: event.agent_id,
-          endedAt: now,
-        },
+        admin,
+        { ...base, status: "ended", ended_reason: event.ended_reason, ended_at: now },
         now,
       );
       break;
@@ -147,11 +167,12 @@ export async function POST(request: Request) {
       const analysis = event.analysis ?? {};
       const hydrated = await hydrate(sessionId);
       await upsertCall(
-        sessionId,
+        admin,
         {
+          ...base,
           status: "analyzed",
-          agentId: event.agent_id,
-          summary: typeof analysis.summary === "string" ? analysis.summary : undefined,
+          summary:
+            typeof analysis.summary === "string" ? analysis.summary : undefined,
           analysis,
           ...hydrated,
         },
@@ -161,15 +182,10 @@ export async function POST(request: Request) {
     }
 
     case "phone_call.dial_finished":
-      await upsertCall(
-        sessionId,
-        { status: "in_progress", agentId: event.agent_id },
-        now,
-      );
+      await upsertCall(admin, { ...base, status: "in_progress" }, now);
       break;
 
     default:
-      // Unknown event — record nothing but ack.
       console.log(`[webhook] unhandled event type: ${event.type}`);
   }
 

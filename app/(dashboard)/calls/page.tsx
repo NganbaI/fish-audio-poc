@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { listCalls } from "@/lib/store";
+import { createClient } from "@/lib/supabase/server";
+import { listCallsForUser } from "@/lib/calls";
 import { deriveLead, LEAD_VARIANT } from "@/lib/lead";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -28,7 +29,8 @@ function statusVariant(status: string): "default" | "secondary" | "outline" {
 }
 
 export default async function CallsPage() {
-  const calls = await listCalls();
+  const supabase = await createClient();
+  const calls = await listCallsForUser(supabase);
 
   return (
     <div className="flex flex-col gap-6">

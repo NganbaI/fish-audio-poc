@@ -12,35 +12,42 @@ for the VOLA baseline being replaced.
 ## What this proves
 
 ```
-create + publish agent (script)  →  mint session token (/api/session)  →
-browser voice chat via Fish web SDK (LiveKit WebRTC)  →  call ends  →
-HMAC-verified webhook (/api/webhooks/fish)  →
+sign up / log in (Supabase Auth)  →  create + publish an agent in-app (/agents/new)  →
+mint session token (/api/session)  →  browser voice chat via Fish web SDK (LiveKit WebRTC)  →
+call ends  →  HMAC-verified webhook (/api/webhooks/fish)  →
 hydrate transcript + recording + analysis (read API)  →  dashboard (/calls)
 ```
 
-The agent runs **Fish Audio's built-in LLM**; telephony is deferred in favour of an
-in-browser voice session (no phone number, zero telephony cost).
+A multi-user dashboard: each user logs in, builds and configures their own Fish Audio
+agents, tests them in the browser, and reviews call history — all scoped per user by
+Postgres RLS. The agent runs **Fish Audio's built-in LLM**; telephony is deferred in
+favour of an in-browser voice session (no phone number, zero telephony cost).
 
 ## Stack
 
-- **Next.js 16** (App Router) + TypeScript + Tailwind v4
+- **Next.js 16** (App Router, `proxy.ts`) + TypeScript + Tailwind v4
 - **shadcn/ui** (base-nova, lucide icons)
+- **Supabase** — Auth (email/password) + Postgres with Row-Level Security
 - **`@fishaudio/agent-react` / `agent-client`** — browser voice SDK (LiveKit WebRTC)
-- File-backed JSON store (`/data/calls.json`) — swap for SQLite/Prisma for real use
 
 ## Project layout
 
 | Path | Role |
 |------|------|
-| `lib/fish.ts` | Central Fish REST client (agents, sessions, recording) — the analogue of VOLA's `lib/elevenlabs.ts` |
+| `lib/fish.ts` | Central Fish REST client (agents, sessions, recording, voices) |
 | `lib/webhook.ts` | HMAC-SHA256 webhook signature verification |
-| `lib/store.ts` | Minimal JSON call-record store |
+| `lib/supabase/{server,client,admin}.ts` | Supabase clients (RLS server, browser, service-role) |
+| `proxy.ts` + `lib/supabase/middleware.ts` | Session refresh + auth gate |
+| `lib/agents.ts` / `lib/calls.ts` | Supabase-backed agent + call records |
+| `lib/agent-config.ts` | Shared form-input → Fish AgentConfig builder |
 | `lib/lead.ts` | Derives a hot/warm/cold lead label from post-call analysis |
-| `scripts/setup-agent.ts` | Run-once: create → configure → publish the demo agent |
-| `app/api/session/route.ts` | Mints a single-use browser session token (keeps the API key server-side) |
+| `supabase/migrations/0001_init.sql` | `agents` + `calls` tables with RLS |
+| `app/auth-actions.ts`, `app/login`, `app/signup` | Supabase Auth server actions + pages |
+| `app/(dashboard)/*` | Auth-gated shell: agents list, `/agents/new`, `/agents/[id]` (Test/Config), `/calls` |
+| `app/api/agents/*`, `app/api/voices` | Create/list agents; voice picker |
+| `app/api/session/route.ts` | Mints a single-use session token for the selected agent |
 | `app/api/webhooks/fish/route.ts` | Signed webhook receiver; hydrates transcript + recording |
-| `app/page.tsx` + `components/voice-call.tsx` | Browser voice UI |
-| `app/calls/*` | Dashboard: list + call detail (summary, analysis, recording, transcript) |
+| `components/agent-form.tsx`, `components/voice-call.tsx` | Agent builder + browser voice UI |
 
 ## Getting started
 
@@ -52,16 +59,18 @@ in-browser voice session (no phone number, zero telephony cost).
    > npm can't resolve directly. This repo pins them via `overrides` in `package.json`
    > — keep that block if you bump the SDK versions.
 
-2. **Configure** — copy `.env.example` to `.env.local` and fill in:
+2. **Create a Supabase project**, then run the migration
+   [`supabase/migrations/0001_init.sql`](./supabase/migrations/0001_init.sql) in the
+   Supabase SQL editor (or `supabase db push`). It creates the `agents` + `calls`
+   tables with RLS. Email confirmation can be disabled in Auth settings for a
+   frictionless dev signup.
+
+3. **Configure** — copy `.env.example` to `.env.local` and fill in:
+   - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+     — from Supabase → Settings → API
    - `FISH_API_KEY` — from <https://fish.audio/app/api-keys/> (needs Voice Agents access)
    - `FISH_WEBHOOK_SECRET` — matching the value you set in the Fish console webhook
    - `PUBLIC_BASE_URL` — a public HTTPS tunnel (ngrok / Cloudflare Tunnel) for webhooks
-
-3. **Create the agent**:
-   ```bash
-   npm run setup:agent
-   ```
-   Copy the printed `FISH_AGENT_ID=…` into `.env.local`.
 
 4. **Point the Fish console webhook** at `${PUBLIC_BASE_URL}/api/webhooks/fish`.
 
@@ -69,9 +78,14 @@ in-browser voice session (no phone number, zero telephony cost).
    ```bash
    npm run dev
    ```
-   Open <http://localhost:3000>, click **Start call**, and talk. After hanging up,
-   the call appears under **History** (`/calls`) with its summary, extracted data
-   fields, success criteria, recording, and transcript.
+   Open <http://localhost:3000> → you're sent to **/login**. Sign up, then:
+   **New agent** → fill the form (it runs Fish create → config → publish) → open the
+   agent → **Test** tab → **Start call** and talk. After hanging up, the call appears
+   under **History** (`/calls`) with its summary, extracted data fields, success
+   criteria, recording, and transcript — visible only to you (RLS).
+
+> `scripts/setup-agent.ts` (`npm run setup:agent`) remains as a standalone CLI way to
+> create a single agent; the dashboard is the primary flow now.
 
 ## Scripts
 
@@ -81,7 +95,7 @@ in-browser voice session (no phone number, zero telephony cost).
 | `npm run build` | Production build |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
-| `npm run setup:agent` | Create + configure + publish the demo agent |
+| `npm run setup:agent` | (Legacy) create + configure + publish one agent from the CLI |
 
 ## Known gaps vs. ElevenLabs (for the go/no-go)
 
