@@ -29,5 +29,7 @@ yarn-error.log*
 .vercel
 *.tsbuildinfo
 
-# local claude config (keep skills, ignore local settings)
+# local claude config (keep skills, ignore local runtime/settings)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/plans/
